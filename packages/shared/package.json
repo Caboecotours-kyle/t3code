@@ -511,6 +511,10 @@
       "types": "./src/cloneUrl.ts",
       "import": "./src/cloneUrl.ts"
     },
+    "./cuaDriverHostOptions": {
+      "types": "./src/cuaDriverHostOptions.ts",
+      "import": "./src/cuaDriverHostOptions.ts"
+    },
     "./cuaDriverRelease": {
       "types": "./src/cuaDriverRelease.ts",
       "import": "./src/cuaDriverRelease.ts"
