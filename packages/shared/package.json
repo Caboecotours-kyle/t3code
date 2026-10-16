@@ -7,6 +7,10 @@
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"
     },
+    "./nativeAppMentions": {
+      "types": "./src/nativeAppMentions.ts",
+      "import": "./src/nativeAppMentions.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"

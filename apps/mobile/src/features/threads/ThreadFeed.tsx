@@ -1,5 +1,6 @@
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
+import { parseNativeAppMention } from "@t3tools/shared/nativeAppMentions";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
 import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
@@ -1939,6 +1940,7 @@ function UserMessageContent(props: UserMessageContentProps) {
     return `[${ref.label}${available ? "" : " (unavailable)"}](t3-context://v1/${ref.kind}/${ref.contextId})`;
   });
   const onLinkPress = (href: string) => {
+    if (parseNativeAppMention(href)) return;
     const reference = parseComposerContextHref(href);
     if (!reference) return props.linkHandlers.onLinkPress?.(href);
     const record = props.context?.records.find(
