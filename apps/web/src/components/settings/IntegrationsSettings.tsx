@@ -1183,13 +1183,10 @@ function ComputerUseControls() {
 
   const save = async (enableCua: boolean) => {
     setSaving(true);
-    try {
-      const result = await updateSettings({ enableCua });
-      refresh();
-      return result;
-    } finally {
-      setSaving(false);
-    }
+    const result = await updateSettings({ enableCua });
+    refresh();
+    setSaving(false);
+    return result;
   };
 
   return (

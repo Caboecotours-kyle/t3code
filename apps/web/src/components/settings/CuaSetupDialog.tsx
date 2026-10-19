@@ -72,10 +72,9 @@ export function CuaSetupDialog({
       await onAllow(target);
     } catch {
       setError("Could not open System Settings. Try Allow again.");
-    } finally {
-      pending.current = false;
-      setBusy(false);
     }
+    pending.current = false;
+    setBusy(false);
   };
   const finish = async () => {
     if (pending.current || !ready) return;
@@ -87,10 +86,9 @@ export function CuaSetupDialog({
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not save the setting. Try again.");
-    } finally {
-      pending.current = false;
-      setBusy(false);
     }
+    pending.current = false;
+    setBusy(false);
   };
   return (
     <Dialog
