@@ -381,7 +381,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     <SettingsSwitchRow
                       icon="desktopcomputer"
                       label="Computer use"
-                      subtitle="Allow agents to use apps on this environment's computer through Cua Driver. On a Mac, grant Accessibility and Screen Recording from T3 Code on that Mac."
+                      subtitle="Allow agents to use apps on the selected environments' computers through Cua Driver. On macOS, grant Accessibility and Screen Recording on each host."
                       value={uniform("enableCua")}
                       disabled={disabledFor("enableCua")}
                       onValueChange={(value) => write({ enableCua: value })}

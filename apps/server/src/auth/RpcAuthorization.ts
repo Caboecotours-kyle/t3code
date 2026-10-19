@@ -227,7 +227,8 @@ const SettingsUpdate = Schema.Struct({
   patch: ServerSettingsPatch,
   providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
 });
-const decodeSettingsUpdate = Schema.decodeUnknownSync(SettingsUpdate);
+// RPC middleware receives decoded values, including Duration instances.
+const decodeSettingsUpdate = Schema.decodeUnknownSync(Schema.toType(SettingsUpdate));
 
 const requiredScopesForSettingsUpdate = (payload: unknown) => {
   const input = decodeSettingsUpdate(payload);
