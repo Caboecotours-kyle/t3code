@@ -579,23 +579,24 @@ that credentials exist before an adapter opens and are revoked when it closes.
 ### External fleet launch authorization
 
 An external stdio bridge does not receive the originating T3 thread credential.
-`t3_fleet_launch_authorize` lets a live thread authorize one exact bridge request
-without exporting that credential or borrowing an owner client's modes. Supply
-the request's SHA-256 digest and explicit runtime/interaction modes. The opaque
-`callerAuthorization` expires after 30 seconds; do not log or persist it.
+`t3_fleet_launch` takes requestJson, requestDigest and explicit modes prepared by
+the installed fleet bridge. It requires a live local T3 thread and validates modes
+against that thread, then holds an exact-request grant internally and dispatches
+only the fixed Python bridge via stdin. The model sees no grant in its arguments
+or results. Provider transcripts and durable turn-item history therefore never
+receive this credential. Arbitrary executables are not accepted.
 
-The trusted local bridge redeems it with `t3_fleet_launch_consume`, through its
-owner OAuth client. Native T3 atomically consumes the grant, checks that the
-original provider session still exists and the calling thread is active, then
-checks the requested modes against its live modes. It returns only those modes.
-An owner client cannot mint a thread authorization. Linked callers cannot mint
-or redeem through another environment's owner authority. Grants are hashed in
-memory, limited to 256 outstanding entries, and invalidated by session revocation
-or restart. A digest mismatch consumes the grant too.
+The bridge redeems the grant through its local owner OAuth client using
+`t3_fleet_launch_consume`. Native T3 atomically consumes it, verifies the original
+provider session still exists and its thread is active, then checks requested
+modes against the thread's live modes. It returns only those modes. Owner clients
+cannot mint grants and linked callers cannot mint or redeem through another
+machine's owner authority. Grants are hashed in memory, limited to 256 entries,
+expire in 30 seconds and die with their session or server restart. A digest
+mismatch consumes the grant too. Every launch field, host and target-session
+fingerprint is included in the canonical request digest.
 
-The bridge must include every launch field, destination host and target-session
-fingerprint in its canonical request digest; only `callerAuthorization` is
-excluded. Redemption and forwarding happen once, with bounded deadlines. Lost
-launch results require reconciliation by unique title before authorizing another
-request. This integration adds no executable selection or filesystem access to
-T3's MCP API, and does not change ordinary launch or send permissions.
+The fixed subprocess has a 48-second deadline and 256-KiB output cap. Only validated
+launch IDs/status return to the model; errors omit child output and stdin. There
+is no automatic retry. A lost reply requires reconciling fleet_threads by exact,
+unique title before another launch. Ordinary send permissions are unchanged.

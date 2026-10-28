@@ -6,6 +6,7 @@ import {
   type RuntimeMode,
   type ProviderInteractionMode,
 } from "@t3tools/contracts";
+import * as FleetLaunch from "../../FleetLaunch.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Tool from "effect/ai/Tool";
@@ -53,6 +54,17 @@ it.effect(
       };
       let authorizations = 0;
       const layers = Layer.mergeAll(
+        Layer.mock(FleetLaunch.FleetLaunch)({
+          launch: () => {
+            authorizations++;
+            return Effect.succeed({
+              threadId: ThreadId.make("target"),
+              projectId: liveThreadShell(threadId).projectId,
+              runId: null,
+              status: "preparing",
+            });
+          },
+        }),
         Layer.mock(ThreadManagement.ThreadManagementService)({
           getThreadShell: (id) =>
             Effect.succeed(
@@ -78,7 +90,7 @@ it.effect(
         Layer.merge(layers, Layer.succeed(McpInvocationContext.McpInvocationContext, caller));
       const call = (
         caller: McpInvocationContext.McpInvocationScope,
-        name: "t3_fleet_launch_authorize" | "t3_fleet_launch_consume",
+        name: "t3_fleet_launch" | "t3_fleet_launch_consume",
         params: Tool.Parameters<(typeof FleetToolkit.tools)[keyof typeof FleetToolkit.tools]>,
       ) =>
         Effect.gen(function* () {
@@ -95,20 +107,21 @@ it.effect(
         });
       const input = {
         requestDigest: "b".repeat(64),
+        requestJson: "{}",
         runtimeMode: "auto" as const,
         interactionMode: "plan" as const,
       };
-      expect((yield* call(owner, "t3_fleet_launch_authorize", input))?.isFailure).toBe(true);
+      expect((yield* call(owner, "t3_fleet_launch", input))?.isFailure).toBe(true);
       expect(authorizations).toBe(0);
       expect(
-        (yield* call(scope, "t3_fleet_launch_authorize", { ...input, runtimeMode: "full-access" }))
+        (yield* call(scope, "t3_fleet_launch", { ...input, runtimeMode: "full-access" }))
           ?.isFailure,
       ).toBe(true);
       expect(
-        (yield* call(scope, "t3_fleet_launch_authorize", { ...input, interactionMode: "default" }))
+        (yield* call(scope, "t3_fleet_launch", { ...input, interactionMode: "default" }))
           ?.isFailure,
       ).toBe(true);
-      expect((yield* call(scope, "t3_fleet_launch_authorize", input))?.isFailure).toBe(false);
+      expect((yield* call(scope, "t3_fleet_launch", input))?.isFailure).toBe(false);
       const redeem = { callerAuthorization: "a".repeat(43), requestDigest: input.requestDigest };
       expect((yield* call(owner, "t3_fleet_launch_consume", redeem))?.isFailure).toBe(false);
       modes.runtimeMode = "approval-required";
@@ -116,7 +129,7 @@ it.effect(
       modes.runtimeMode = "auto";
       modes.active = false;
       expect((yield* call(owner, "t3_fleet_launch_consume", redeem))?.isFailure).toBe(true);
-      expect((yield* call(scope, "t3_fleet_launch_authorize", input))?.isFailure).toBe(true);
+      expect((yield* call(scope, "t3_fleet_launch", input))?.isFailure).toBe(true);
       modes.active = true;
       const linked = {
         ...owner,

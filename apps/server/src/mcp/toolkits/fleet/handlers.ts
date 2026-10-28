@@ -1,4 +1,5 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as FleetLaunch from "../../FleetLaunch.ts";
 import * as Effect from "effect/Effect";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
@@ -23,7 +24,7 @@ const requireLocalCaller = (caller: Caller) =>
       );
 
 export const layer = McpToolAccess.toLayer(FleetToolkit, {
-  t3_fleet_launch_authorize: McpToolAccess.actsAsCaller((input) =>
+  t3_fleet_launch: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const caller = yield* readCaller();
       yield* requireLocalCaller(caller);
@@ -32,15 +33,14 @@ export const layer = McpToolAccess.toLayer(FleetToolkit, {
         "Fleet launch authorization",
       );
       yield* assertTargetWithinLimits(caller.limits, input);
-      const registry = yield* McpSessionRegistry.McpSessionRegistry;
-      return {
-        callerAuthorization: yield* registry.authorizeFleetLaunch({
-          scope,
-          requestDigest: input.requestDigest,
-          runtimeMode: input.runtimeMode,
-          interactionMode: input.interactionMode,
-        }),
-      };
+      const fleet = yield* FleetLaunch.FleetLaunch;
+      return yield* fleet.launch({
+        scope,
+        requestDigest: input.requestDigest,
+        requestJson: input.requestJson,
+        runtimeMode: input.runtimeMode,
+        interactionMode: input.interactionMode,
+      });
     }),
   ),
   t3_fleet_launch_consume: McpToolAccess.writesEnvironment((input) =>
