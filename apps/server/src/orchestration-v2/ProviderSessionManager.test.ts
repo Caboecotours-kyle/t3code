@@ -600,6 +600,8 @@ const layerPausingMcpRegistry = (pause: {
     Effect.gen(function* () {
       const delegate = yield* McpSessionRegistry.McpSessionRegistry;
       return McpSessionRegistry.McpSessionRegistry.of({
+        authorizeFleetLaunch: () => Effect.die("unused"),
+        consumeFleetLaunch: () => Effect.die("unused"),
         ...delegate,
         resolve: (rawToken) =>
           Ref.getAndSet(pause.armed, false).pipe(

@@ -220,3 +220,84 @@ it.effect.each(["provider-session", "thread", "all"] as const)(
       expect(yield* registry.resolve(token)).toBeUndefined();
     }),
 );
+
+it.effect(
+  "fleet grants bind an exact request, expire, consume once, and die with their provider session",
+  () =>
+    Effect.gen(function* () {
+      let now = 1_000;
+      const registry = yield* makeRegistry(() => now);
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make("fleet-caller"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      });
+      const scope = yield* registry.resolve(issued.config.authorizationHeader.slice(7));
+      if (scope === undefined) throw new Error("missing scope");
+      const requestDigest = "a".repeat(64);
+      const grant = {
+        scope,
+        requestDigest,
+        runtimeMode: "auto" as const,
+        interactionMode: "plan" as const,
+      };
+      const token = yield* registry.authorizeFleetLaunch(grant);
+      expect(yield* registry.consumeFleetLaunch(token, requestDigest)).toMatchObject(grant);
+      expect(
+        (yield* registry.consumeFleetLaunch(token, requestDigest).pipe(Effect.exit))._tag,
+      ).toBe("Failure");
+      const altered = yield* registry.authorizeFleetLaunch(grant);
+      expect(
+        (yield* registry.consumeFleetLaunch(altered, "b".repeat(64)).pipe(Effect.exit))._tag,
+      ).toBe("Failure");
+      expect(
+        (yield* registry.consumeFleetLaunch(altered, requestDigest).pipe(Effect.exit))._tag,
+      ).toBe("Failure");
+      const expired = yield* registry.authorizeFleetLaunch(grant);
+      now += 30_000;
+      yield* registry.touch(scope.thread.threadId);
+      expect(
+        (yield* registry.consumeFleetLaunch(expired, requestDigest).pipe(Effect.exit))._tag,
+      ).toBe("Failure");
+      const revoked = yield* registry.authorizeFleetLaunch(grant);
+      yield* registry.revokeProviderSession(scope.thread.providerSessionId);
+      expect(
+        (yield* registry.consumeFleetLaunch(revoked, requestDigest).pipe(Effect.exit))._tag,
+      ).toBe("Failure");
+      expect((yield* registry.authorizeFleetLaunch(grant).pipe(Effect.exit))._tag).toBe("Failure");
+    }),
+);
+
+it.effect(
+  "fleet authorization storage is bounded and concurrent redemption accepts only once",
+  () =>
+    Effect.gen(function* () {
+      let now = 1_000;
+      const registry = yield* makeRegistry(() => now);
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make("fleet-limit"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      });
+      const scope = yield* registry.resolve(issued.config.authorizationHeader.slice(7));
+      if (scope === undefined) throw new Error("missing scope");
+      const grant = {
+        scope,
+        requestDigest: "a".repeat(64),
+        runtimeMode: "auto" as const,
+        interactionMode: "default" as const,
+      };
+      const token = yield* registry.authorizeFleetLaunch(grant);
+      const results = yield* Effect.all(
+        [
+          registry.consumeFleetLaunch(token, grant.requestDigest).pipe(Effect.exit),
+          registry.consumeFleetLaunch(token, grant.requestDigest).pipe(Effect.exit),
+        ],
+        { concurrency: 2 },
+      );
+      expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+      for (let i = 0; i < 256; i++) yield* registry.authorizeFleetLaunch(grant);
+      expect((yield* registry.authorizeFleetLaunch(grant).pipe(Effect.exit))._tag).toBe("Failure");
+      now += 30_000;
+      yield* registry.touch(scope.thread.threadId);
+      expect(yield* registry.authorizeFleetLaunch(grant)).toHaveLength(43);
+    }),
+);

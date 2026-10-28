@@ -1,4 +1,10 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  OrchestratorMcpFailure,
+  type RuntimeMode,
+  type ProviderInteractionMode,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -25,7 +31,21 @@ export interface McpIssuedCredential {
   readonly config: McpProviderSession.McpProviderSessionConfig;
 }
 
+export interface FleetLaunchGrant {
+  readonly scope: McpInvocationContext.McpThreadInvocationScope;
+  readonly requestDigest: string;
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
+
 export interface McpSessionRegistryShape {
+  readonly authorizeFleetLaunch: (
+    grant: FleetLaunchGrant,
+  ) => Effect.Effect<string, OrchestratorMcpFailure>;
+  readonly consumeFleetLaunch: (
+    authorization: string,
+    requestDigest: string,
+  ) => Effect.Effect<FleetLaunchGrant, OrchestratorMcpFailure>;
   readonly issue: (request: McpCredentialRequest) => Effect.Effect<McpIssuedCredential>;
   readonly resolve: (
     rawToken: string,
@@ -49,6 +69,7 @@ interface CredentialRecord {
 
 interface RegistryState {
   readonly records: ReadonlyMap<string, CredentialRecord>;
+  readonly grants: ReadonlyMap<string, FleetLaunchGrant & { readonly expiresAt: number }>;
 }
 
 export interface McpSessionRegistryOptions {
@@ -80,7 +101,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const environmentId = yield* environment.getEnvironmentId;
   const httpServer = yield* HttpServer.HttpServer;
-  const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
+  const state = yield* SynchronizedRef.make<RegistryState>({
+    records: new Map(),
+    grants: new Map(),
+  });
   const currentTimeMillis = options.now ? Effect.sync(options.now) : Clock.currentTimeMillis;
   const livenessWindowMs = options.livenessWindowMs ?? DEFAULT_LIVENESS_WINDOW_MS;
   const endpoint = NetAddress.isInetAddress(httpServer.address)
@@ -117,10 +141,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         ]),
         issuedAt,
       };
-      yield* SynchronizedRef.update(state, ({ records }) => {
+      yield* SynchronizedRef.update(state, ({ records, grants }) => {
         const next = new Map(records);
         next.set(tokenHash, { tokenHash, scope, lastAliveAt: issuedAt });
-        return { records: next };
+        return { records: next, grants };
       });
       return {
         config: {
@@ -142,14 +166,14 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       if (rawToken.length === 0) return undefined;
       const tokenHash = yield* hashToken(rawToken);
       const timestamp = yield* currentTimeMillis;
-      return yield* SynchronizedRef.modify(state, ({ records }) => {
+      return yield* SynchronizedRef.modify(state, ({ records, grants }) => {
         const record = records.get(tokenHash);
         if (!record || timestamp - record.lastAliveAt > livenessWindowMs) {
-          return [undefined, { records }] as const;
+          return [undefined, { records, grants }] as const;
         }
         const next = new Map(records);
         next.set(tokenHash, { ...record, lastAliveAt: timestamp });
-        return [record.scope, { records: next }] as const;
+        return [record.scope, { records: next, grants }] as const;
       });
     },
   );
@@ -157,24 +181,78 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const touch: McpSessionRegistryShape["touch"] = Effect.fn("McpSessionRegistry.touch")(
     function* (threadId) {
       const timestamp = yield* currentTimeMillis;
-      yield* SynchronizedRef.update(state, ({ records }) => {
+      yield* SynchronizedRef.update(state, ({ records, grants }) => {
         const next = new Map(records);
         for (const [tokenHash, record] of records) {
           if (record.scope.thread.threadId === threadId) {
             next.set(tokenHash, { ...record, lastAliveAt: timestamp });
           }
         }
-        return { records: next };
+        return { records: next, grants };
       });
     },
   );
 
   const revokeWhere = (predicate: (record: CredentialRecord) => boolean) =>
-    SynchronizedRef.update(state, ({ records }) => ({
+    SynchronizedRef.update(state, ({ records, grants }) => ({
       records: new Map(Array.from(records).filter(([, record]) => !predicate(record))),
+      grants,
     }));
 
+  const grantRefused = () =>
+    new OrchestratorMcpFailure({
+      code: "capability_denied",
+      message: "Fleet launch authorization is invalid, expired, consumed, or revoked.",
+    });
+  const authorizeFleetLaunch: McpSessionRegistryShape["authorizeFleetLaunch"] = Effect.fn(
+    "McpSessionRegistry.authorizeFleetLaunch",
+  )(function* (grant) {
+    const now = yield* currentTimeMillis;
+    const token = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
+    const hash = yield* hashToken(token);
+    const accepted = yield* SynchronizedRef.modify(state, ({ records, grants }) => {
+      const next = new Map(Array.from(grants).filter(([, value]) => value.expiresAt > now));
+      const live = Array.from(records.values()).some(
+        (record) =>
+          record.scope.thread.providerSessionId === grant.scope.thread.providerSessionId &&
+          now - record.lastAliveAt <= livenessWindowMs,
+      );
+      if (!live || next.size >= 256) return [false, { records, grants: next }] as const;
+      next.set(hash, { ...grant, expiresAt: now + 30_000 });
+      return [true, { records, grants: next }] as const;
+    });
+    if (!accepted) return yield* grantRefused();
+    return token;
+  });
+  const consumeFleetLaunch: McpSessionRegistryShape["consumeFleetLaunch"] = Effect.fn(
+    "McpSessionRegistry.consumeFleetLaunch",
+  )(function* (authorization, requestDigest) {
+    const hash = yield* hashToken(authorization);
+    const now = yield* currentTimeMillis;
+    const grant = yield* SynchronizedRef.modify(state, ({ records, grants }) => {
+      const value = grants.get(hash);
+      const next = new Map(
+        Array.from(grants).filter(([key, item]) => key !== hash && item.expiresAt > now),
+      );
+      const live =
+        value !== undefined &&
+        Array.from(records.values()).some(
+          (record) =>
+            record.scope.thread.providerSessionId === value.scope.thread.providerSessionId &&
+            now - record.lastAliveAt <= livenessWindowMs,
+        );
+      return [
+        live && value.expiresAt > now && value.requestDigest === requestDigest ? value : undefined,
+        { records, grants: next },
+      ] as const;
+    });
+    if (grant === undefined) return yield* grantRefused();
+    return grant;
+  });
+
   return McpSessionRegistry.of({
+    authorizeFleetLaunch,
+    consumeFleetLaunch,
     issue,
     resolve,
     touch,
@@ -186,7 +264,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     revokeThread: Effect.fn("McpSessionRegistry.revokeThread")(function* (threadId) {
       yield* revokeWhere((record) => record.scope.thread.threadId === threadId);
     }),
-    revokeAll: SynchronizedRef.set(state, { records: new Map() }),
+    revokeAll: SynchronizedRef.set(state, { records: new Map(), grants: new Map() }),
   });
 });
 
