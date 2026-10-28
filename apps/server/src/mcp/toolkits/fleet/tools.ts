@@ -1,4 +1,5 @@
 import { OrchestratorMcpFailure, RuntimeMode, ProviderInteractionMode } from "@t3tools/contracts";
+import * as FleetLaunch from "../../FleetLaunch.ts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -18,12 +19,17 @@ const shared = {
   ],
 };
 export const FleetToolkit = Toolkit.make(
-  Tool.make("t3_fleet_launch_authorize", {
+  Tool.make("t3_fleet_launch", {
     ...shared,
     description:
-      "Authorize one fleet launch as this calling thread. Pass the SHA-256 digest from fleet launch preparation and explicit modes. The opaque authorization expires in 30 seconds and is consumed once; never log it. It cannot exceed your live modes. A lost launch reply needs reconciliation by title before another authorization.",
-    parameters: Schema.Struct({ requestDigest: digest, ...modes }),
-    success: Schema.Struct({ callerAuthorization: authorization }),
+      "Launch one fleet builder as this calling thread. Pass requestJson, requestDigest and explicit modes from the installed fleet bridge's prepare-launch command. Native T3 holds the caller grant internally and dispatches the fixed bridge once. Modes cannot exceed yours. Retain threadId; on a lost reply reconcile fleet_threads by the exact unique title before another launch.",
+    parameters: Schema.Struct({
+      requestDigest: digest,
+      requestJson: Schema.String.check(Schema.isMaxLength(120000)),
+      ...modes,
+    }),
+    success: FleetLaunch.LaunchResult,
+    dependencies: [...shared.dependencies, FleetLaunch.FleetLaunch],
   }).annotate(Tool.Destructive, true),
   Tool.make("t3_fleet_launch_consume", {
     ...shared,
