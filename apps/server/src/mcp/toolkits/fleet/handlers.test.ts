@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Tool from "effect/ai/Tool";
 import * as Stream from "effect/Stream";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
@@ -55,7 +56,7 @@ it.effect(
         Layer.mock(ThreadManagement.ThreadManagementService)({
           getThreadShell: (id) =>
             Effect.succeed(
-              liveThreadShell(id, { ...modes, activeRunId: modes.active ? undefined : null }),
+              liveThreadShell(id, { ...modes, ...(!modes.active ? { activeRunId: null } : {}) }),
             ),
         }),
         Layer.mock(PeerForwarding.PeerForwarding)({}),
@@ -78,7 +79,7 @@ it.effect(
       const call = (
         caller: McpInvocationContext.McpInvocationScope,
         name: "t3_fleet_launch_authorize" | "t3_fleet_launch_consume",
-        params: unknown,
+        params: Tool.Parameters<(typeof FleetToolkit.tools)[keyof typeof FleetToolkit.tools]>,
       ) =>
         Effect.gen(function* () {
           const dependencies = withScope(caller);
