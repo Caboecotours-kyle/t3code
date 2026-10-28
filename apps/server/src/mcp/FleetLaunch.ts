@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
+import * as Path from "effect/Path";
 import * as ProcessRunner from "../processRunner.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
@@ -58,7 +58,8 @@ const encodeRequest = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const make = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const runner = yield* ProcessRunner.ProcessRunner;
-  const bridge = NodePath.join(NodeOS.homedir(), ".local/share/t3-fleet-mcp/t3-fleet-mcp.py");
+  const path = yield* Path.Path;
+  const bridge = path.join(NodeOS.homedir(), ".local/share/t3-fleet-mcp/t3-fleet-mcp.py");
   const launch: FleetLaunch["Service"]["launch"] = Effect.fn("FleetLaunch.launch")(
     function* (input) {
       const request = yield* decodeRequest(input.requestJson).pipe(Effect.mapError(invalidRequest));
