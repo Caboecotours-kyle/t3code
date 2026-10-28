@@ -575,3 +575,28 @@ Coverage includes:
 Provider adapter tests separately verify Codex, Claude, Cursor, Grok, and ACP
 Registry behavior and MCP injection. The provider-session manager test verifies
 that credentials exist before an adapter opens and are revoked when it closes.
+
+### External fleet launch authorization
+
+An external stdio bridge does not receive the originating T3 thread credential.
+`t3_fleet_launch` takes requestJson, requestDigest and explicit modes prepared by
+the installed fleet bridge. It requires a live local T3 thread and validates modes
+against that thread, then holds an exact-request grant internally and dispatches
+only the fixed Python bridge via stdin. The model sees no grant in its arguments
+or results. Provider transcripts and durable turn-item history therefore never
+receive this credential. Arbitrary executables are not accepted.
+
+The bridge redeems the grant through its local owner OAuth client using
+`t3_fleet_launch_consume`. Native T3 atomically consumes it, verifies the original
+provider session still exists and its thread is active, then checks requested
+modes against the thread's live modes. It returns only those modes. Owner clients
+cannot mint grants and linked callers cannot mint or redeem through another
+machine's owner authority. Grants are hashed in memory, limited to 256 entries,
+expire in 30 seconds and die with their session or server restart. A digest
+mismatch consumes the grant too. Every launch field, host and target-session
+fingerprint is included in the canonical request digest.
+
+The fixed subprocess has a 48-second deadline and 256-KiB output cap. Only validated
+launch IDs/status return to the model; errors omit child output and stdin. There
+is no automatic retry. A lost reply requires reconciling fleet_threads by exact,
+unique title before another launch. Ordinary send permissions are unchanged.
