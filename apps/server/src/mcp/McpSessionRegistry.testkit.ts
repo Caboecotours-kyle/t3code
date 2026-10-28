@@ -7,6 +7,8 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 export const layer = Layer.succeed(
   McpSessionRegistry.McpSessionRegistry,
   McpSessionRegistry.McpSessionRegistry.of({
+    authorizeFleetLaunch: () => Effect.die("unused"),
+    consumeFleetLaunch: () => Effect.die("unused"),
     issue: ({ threadId, providerInstanceId }) =>
       Effect.succeed({
         config: {

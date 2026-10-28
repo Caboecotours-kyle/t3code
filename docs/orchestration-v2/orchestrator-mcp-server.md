@@ -575,3 +575,27 @@ Coverage includes:
 Provider adapter tests separately verify Codex, Claude, Cursor, Grok, and ACP
 Registry behavior and MCP injection. The provider-session manager test verifies
 that credentials exist before an adapter opens and are revoked when it closes.
+
+### External fleet launch authorization
+
+An external stdio bridge does not receive the originating T3 thread credential.
+`t3_fleet_launch_authorize` lets a live thread authorize one exact bridge request
+without exporting that credential or borrowing an owner client's modes. Supply
+the request's SHA-256 digest and explicit runtime/interaction modes. The opaque
+`callerAuthorization` expires after 30 seconds; do not log or persist it.
+
+The trusted local bridge redeems it with `t3_fleet_launch_consume`, through its
+owner OAuth client. Native T3 atomically consumes the grant, checks that the
+original provider session still exists and the calling thread is active, then
+checks the requested modes against its live modes. It returns only those modes.
+An owner client cannot mint a thread authorization. Linked callers cannot mint
+or redeem through another environment's owner authority. Grants are hashed in
+memory, limited to 256 outstanding entries, and invalidated by session revocation
+or restart. A digest mismatch consumes the grant too.
+
+The bridge must include every launch field, destination host and target-session
+fingerprint in its canonical request digest; only `callerAuthorization` is
+excluded. Redemption and forwarding happen once, with bounded deadlines. Lost
+launch results require reconciliation by unique title before authorizing another
+request. This integration adds no executable selection or filesystem access to
+T3's MCP API, and does not change ordinary launch or send permissions.
