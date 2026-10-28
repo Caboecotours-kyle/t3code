@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -53,6 +54,7 @@ it.effect(
       const layer = FleetLaunch.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            NodePath.layer,
             Layer.mock(McpSessionRegistry.McpSessionRegistry)({
               authorizeFleetLaunch: (grant) => {
                 grants.push(grant);
@@ -98,6 +100,7 @@ it.effect(
       const layer = FleetLaunch.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            NodePath.layer,
             Layer.mock(McpSessionRegistry.McpSessionRegistry)({
               authorizeFleetLaunch: () => {
                 grants++;
